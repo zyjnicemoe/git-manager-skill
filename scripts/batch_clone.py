@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from urllib.request import urlopen, Request
 from urllib.error import HTTPError, URLError
@@ -91,10 +92,11 @@ def github_get_repo(owner: str, repo: str, token: str = None) -> dict:
 # GitLab
 # ─────────────────────────────────────────────
 
-def gitlab_list_group_repos(host: str, group_id: str, token: str = None) -> list:
+def gitlab_list_group_repos(host: str, group_id: str, token: str = None, recursive: bool = True) -> list:
     """列出 GitLab Group 下所有仓库"""
     gid = quote(str(group_id), safe="")
-    url = f"{host}/api/v4/groups/{gid}/projects?include_subgroups=true"
+    include_subgroups = "true" if recursive else "false"
+    url = f"{host}/api/v4/groups/{gid}/projects?include_subgroups={include_subgroups}"
     return paginate(url, token)
 
 
@@ -242,24 +244,51 @@ def _run_lfs_install(repo_dir: str):
 def batch_clone(repos: list, platform: str, output_dir: str,
                 use_ssh: bool = False, branch: str = None,
                 depth: int = None, skip_existing: bool = True,
-                dry_run: bool = False, lfs: bool = False) -> dict:
+                dry_run: bool = False, lfs: bool = False,
+                workers: int = 1, output_format: str = "text") -> dict:
     """批量克隆仓库列表"""
     stats = {"cloned": 0, "updated": 0, "skipped": 0, "failed": 0, "total": len(repos)}
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    for i, repo in enumerate(repos, 1):
+    results = []  # 用于 JSON 输出
+
+    def clone_one(repo):
         name, url = extract_clone_url(repo, platform, use_ssh)
         dest = str(output_path / name)
-        print(f"\n[{i}/{len(repos)}] {name}")
-
         if dry_run:
             lfs_tag = " [LFS]" if lfs else ""
-            print(f"  [DRY-RUN] 将克隆: {url} -> {dest}{lfs_tag}")
-            continue
-
+            msg = f"  [DRY-RUN] 将克隆: {url} -> {dest}{lfs_tag}"
+            print(f"\n[{repos.index(repo)+1}/{len(repos)}] {name}\n  {msg}")
+            return {"name": name, "url": url, "dest": dest, "status": "dry-run"}
         status = clone_repo(url, dest, branch, depth, skip_existing, lfs=lfs)
-        stats[status] = stats.get(status, 0) + 1
+        return {"name": name, "url": url, "dest": dest, "status": status}
+
+    if workers > 1:
+        # 并发模式
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(clone_one, repo): repo for repo in repos}
+            done = 0
+            for future in as_completed(futures):
+                done += 1
+                res = future.result()
+                results.append(res)
+                status = res["status"]
+                stats[status] = stats.get(status, 0) + 1
+                if output_format == "text":
+                    icon = {"cloned": "✅", "updated": "🔄", "skipped": "⏭️", "failed": "❌", "dry-run": "🔍"}.get(status, "?")
+                    print(f"  [{done}/{len(repos)}] {icon} {res['name']}")
+    else:
+        # 顺序模式
+        for i, repo in enumerate(repos, 1):
+            res = clone_one(repo)
+            results.append(res)
+            stats[res["status"]] = stats.get(res["status"], 0) + 1
+
+    # JSON 输出
+    if output_format == "json":
+        output = {"stats": stats, "repos": results}
+        print(json.dumps(output, ensure_ascii=False, indent=2))
 
     return stats
 
@@ -299,7 +328,8 @@ def main():
                         required=True, help="ID 类型（org/group/user/project）")
     parser.add_argument("--id", dest="target_id", required=True,
                         help="组织名/组 ID/用户 ID/项目 ID")
-    parser.add_argument("--token", default=None, help="API 访问令牌（推荐）")
+    parser.add_argument("--token", default=None,
+                        help="API 访问令牌，也可通过环境变量 GITHUB_TOKEN / GITLAB_TOKEN / GITEA_TOKEN 传入")
     parser.add_argument("--output", default="./repos", help="本地存储目录（默认 ./repos）")
     parser.add_argument("--branch", default=None, help="指定克隆分支")
     parser.add_argument("--depth", type=int, default=None, help="浅克隆深度")
@@ -315,6 +345,14 @@ def main():
                         help="最多处理前 N 个仓库（如 --limit 5）")
     parser.add_argument("--lfs", action="store_true",
                         help="克隆后初始化 Git LFS 并追加常见二进制文件跟踪规则到 .gitattributes")
+    parser.add_argument("--workers", type=int, default=1,
+                        help="并发克隆线程数（默认 1，设为 4 可显著加速大批量克隆）")
+    parser.add_argument("--format", choices=["text", "json"], default="text",
+                        help="输出格式：text（默认）或 json（便于程序化处理）")
+    parser.add_argument("--recursive", action="store_true", default=True,
+                        help="包含 GitLab 子组（默认开启，使用 --no-recursive 禁用）")
+    parser.add_argument("--no-recursive", dest="recursive", action="store_false",
+                        help="禁用 GitLab 子组递归")
 
     args = parser.parse_args()
 
@@ -330,9 +368,25 @@ def main():
         host = args.host.rstrip("/")
 
     # 获取仓库列表
+    # Token 优先使用显式参数，其次使用环境变量
+    env_map = {
+        "github": "GITHUB_TOKEN",
+        "gitlab": "GITLAB_TOKEN",
+        "gitea": "GITEA_TOKEN",
+    }
+    env_token = os.environ.get(env_map.get(args.platform.upper(), ""), "")
+    token = args.token or env_token
+    if not token and args.platform != "github":
+        print("[提示] 未指定 token，部分私有仓库可能无法访问")
+    elif not token:
+        print("[提示] 未指定 token，GitHub API 限速 60次/小时，建议设置 GITHUB_TOKEN")
+
     print(f"\n{'='*60}")
     print(f"平台: {args.platform.upper()}  |  类型: {args.id_type}  |  ID: {args.target_id}")
     print(f"输出目录: {args.output}")
+    print(f"Token: {'✅ 已设置' if token else '❌ 未设置'}")
+    if args.workers > 1:
+        print(f"并发: {args.workers} 线程")
     print(f"{'='*60}")
     print("\n[正在获取仓库列表...]")
 
@@ -342,32 +396,31 @@ def main():
 
     if platform == "github":
         if args.id_type in ("org", "group"):
-            repos = github_list_org_repos(tid, args.token)
+            repos = github_list_org_repos(tid, token)
         elif args.id_type == "user":
-            repos = github_list_user_repos(tid, args.token)
+            repos = github_list_user_repos(tid, token)
         elif args.id_type == "project":
-            r = github_get_repo(tid.split("/")[0], tid.split("/")[-1], args.token)
+            r = github_get_repo(tid.split("/")[0], tid.split("/")[-1], token)
             if r:
                 repos = [r]
 
     elif platform == "gitlab":
         if args.id_type in ("group",):
-            repos = gitlab_list_group_repos(host, tid, args.token)
+            repos = gitlab_list_group_repos(host, tid, token, recursive=args.recursive)
         elif args.id_type == "user":
-            repos = gitlab_list_user_repos(host, tid, args.token)
+            repos = gitlab_list_user_repos(host, tid, token)
         elif args.id_type in ("project",):
-            r = gitlab_get_repo(host, tid, args.token)
+            r = gitlab_get_repo(host, tid, token)
             if r:
                 repos = [r]
         elif args.id_type == "org":
-            # GitLab 中 org 对应 group
-            repos = gitlab_list_group_repos(host, tid, args.token)
+            repos = gitlab_list_group_repos(host, tid, token, recursive=args.recursive)
 
     elif platform == "gitea":
         if args.id_type in ("org", "group"):
-            repos = gitea_list_org_repos(host, tid, args.token)
+            repos = gitea_list_org_repos(host, tid, token)
         elif args.id_type == "user":
-            repos = gitea_list_user_repos(host, tid, args.token)
+            repos = gitea_list_user_repos(host, tid, token)
 
     if repos is None:
         repos = []
@@ -416,18 +469,21 @@ def main():
         skip_existing=not args.update,
         dry_run=args.dry_run,
         lfs=args.lfs,
+        workers=args.workers,
+        output_format=args.format,
     )
 
     # 统计结果
-    print(f"\n{'='*60}")
-    print("批量操作完成！")
-    print(f"  总计: {stats['total']}")
-    if not args.dry_run:
-        print(f"  克隆: {stats.get('cloned', 0)}")
-        print(f"  更新: {stats.get('updated', 0)}")
-        print(f"  跳过: {stats.get('skipped', 0)}")
-        print(f"  失败: {stats.get('failed', 0)}")
-    print(f"{'='*60}")
+    if args.format == "text":
+        print(f"\n{'='*60}")
+        print("批量操作完成！")
+        print(f"  总计: {stats['total']}")
+        if not args.dry_run:
+            print(f"  克隆: {stats.get('cloned', 0)}")
+            print(f"  更新: {stats.get('updated', 0)}")
+            print(f"  跳过: {stats.get('skipped', 0)}")
+            print(f"  失败: {stats.get('failed', 0)}")
+        print(f"{'='*60}")
 
 
 if __name__ == "__main__":

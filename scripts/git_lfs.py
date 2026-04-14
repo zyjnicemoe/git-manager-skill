@@ -44,7 +44,7 @@ def cmd_track(args):
         return
     print(f"[Git LFS] 添加跟踪模式: {args.patterns}")
     for pattern in args.patterns:
-        result = run_git_lfs(["track", "add", "--", pattern], args.repo_dir)
+        result = run_git_lfs(["track", pattern], args.repo_dir)
         if result.returncode == 0:
             print(f"  [OK] {pattern}")
         else:

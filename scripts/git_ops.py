@@ -112,7 +112,6 @@ def cmd_pull(args):
         sys.exit(1)
     cmd = ["pull", "--progress"]
     if args.rebase:
-        cmd[1] = "pull --rebase"
         cmd = ["pull", "--rebase", "--progress"]
     if args.ff_only:
         cmd.append("--ff-only")

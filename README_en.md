@@ -10,8 +10,8 @@
 
 | Feature | Description |
 |---------|-------------|
-| **Batch Clone** | Clone all repos from a GitHub org/user, GitLab group/user/project, or Gitea org/user by ID. Supports `--limit N`, `--lfs`, `--filter`, `--depth` |
-| **Batch Pull** | Scan a local directory tree and batch `git pull`/`fetch` across all discovered repositories with concurrency support |
+| **Batch Clone** | Clone all repos from a GitHub org/user, GitLab group/user/project, or Gitea org/user by ID. Supports `--limit N`, `--lfs`, `--filter`, `--depth`, `--workers N` concurrency, `--format json`, `--recursive` subgroups |
+| **Batch Pull** | Scan a local directory tree and batch `git pull`/`fetch` across all discovered repositories with concurrency support, `--dry-run` preview mode |
 | **Single-repo Ops** | clone, pull, fetch, merge, rebase, branch, checkout, status, diff, log, show, blame, tag, remote, clean, gc |
 | **Staging Area** | `add` (partial/full/interactive), `commit` (with `--amend`), `reset` (soft/mixed/hard) |
 | **Stash** | `stash` (save/pop/list/drop/clear), preserves working directory changes safely |
@@ -24,8 +24,9 @@ git-manager/
 ├── SKILL.md                 # Skill definition file
 ├── README.md                # Chinese documentation
 ├── README_en.md             # This file (English documentation)
+├── CHANGELOG.md             # Version changelog
 ├── scripts/
-│   ├── batch_clone.py       # Batch cloning script
+│   ├── batch_clone.py       # Batch cloning script (concurrency + JSON output)
 │   ├── batch_pull.py        # Batch pull/fetch script
 │   ├── git_ops.py           # Single-repo operations
 │   └── git_lfs.py           # Git LFS utilities
@@ -40,14 +41,19 @@ git-manager/
 # Python interpreter path (managed runtime)
 PY=C:\Users\zhuyi\.workbuddy\binaries\python\versions\3.13.12\python.exe
 
-# Batch clone GitHub user's first 5 repos, enable LFS
+# Batch clone GitHub user's first 5 repos, enable LFS, 4-thread concurrency
 $PY scripts/batch_clone.py --platform github --type user --id zyjnicemoe \
-  --output ./repos --limit 5 --lfs
+  --output ./repos --limit 5 --lfs --workers 4
 
-# Batch clone GitLab group
+# Batch clone GitLab group (with subgroups, JSON output, 8 threads)
 $PY scripts/batch_clone.py --platform gitlab \
   --host https://gitlab.com --type group --id 123456 \
-  --token glpat-xxx --output ./repos
+  --token glpat-xxx --output ./repos --format json --workers 8
+
+# Token via environment variable (more secure)
+export GITLAB_TOKEN=glpat-xxx
+$PY scripts/batch_clone.py --platform gitlab \
+  --host https://gitlab.com --type group --id 123456 --output ./repos
 
 # Batch clone Gitea organization
 $PY scripts/batch_clone.py --platform gitea \

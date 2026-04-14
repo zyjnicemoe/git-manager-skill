@@ -10,8 +10,8 @@
 
 | 功能 | 说明 |
 |------|------|
-| **批量克隆** | 按 org / group / user / project ID 批量克隆 GitHub / GitLab / Gitea 仓库，支持 `--limit N`、`--lfs`、`--filter`、`--depth` |
-| **批量拉取** | 扫描本地目录树，并发批量 `git pull`/`fetch`，支持 rebase 模式和自动 stash |
+| **批量克隆** | 按 org / group / user / project ID 批量克隆 GitHub / GitLab / Gitea 仓库，支持 `--limit N`、`--lfs`、`--filter`、`--depth`、`--workers N` 并发、`--format json`、`--recursive` 子组 |
+| **批量拉取** | 扫描本地目录树，并发批量 `git pull`/`fetch`，支持 rebase 模式和自动 stash，支持 `--dry-run` 预览 |
 | **单仓库操作** | clone, pull, fetch, merge, rebase, branch, checkout, status, diff, log, show, blame, tag, remote, clean, gc |
 | **暂存区操作** | `add`（部分/全部/交互式）、`commit`（含 `--amend` 修改提交）、`reset`（soft/mixed/hard） |
 | **Stash 暂存** | `stash`（save/pop/list/drop/clear），安全保存工作区修改 |
@@ -24,8 +24,9 @@ git-manager/
 ├── SKILL.md                 # 技能主文件
 ├── README.md                # 中文使用说明
 ├── README_en.md             # English documentation
+├── CHANGELOG.md             # 版本变更记录
 ├── scripts/
-│   ├── batch_clone.py       # 批量克隆脚本
+│   ├── batch_clone.py       # 批量克隆脚本（含并发 + JSON 输出）
 │   ├── batch_pull.py        # 批量拉取/更新脚本
 │   ├── git_ops.py           # 单仓库操作脚本
 │   └── git_lfs.py           # Git LFS 专用工具
@@ -40,14 +41,19 @@ git-manager/
 # Python 解释器路径
 $PY = "C:\Users\zhuyi\.workbuddy\binaries\python\versions\3.13.12\python.exe"
 
-# 批量克隆 GitHub 用户前 5 个仓库，启用 LFS
+# 批量克隆 GitHub 用户前 5 个仓库，启用 LFS，4 线程并发
 $PY scripts/batch_clone.py --platform github --type user --id zyjnicemoe `
-  --output ./repos --limit 5 --lfs
+  --output ./repos --limit 5 --lfs --workers 4
 
-# 批量克隆 GitLab group
+# 批量克隆 GitLab group（包含子组，JSON 输出）
 $PY scripts/batch_clone.py --platform gitlab `
   --host https://gitlab.com --type group --id 123456 `
-  --token glpat-xxx --output ./repos
+  --token glpat-xxx --output ./repos --format json --workers 8
+
+# Token 通过环境变量传入（更安全）
+$env:GITLAB_TOKEN = "glpat-xxx"
+$PY scripts/batch_clone.py --platform gitlab `
+  --host https://gitlab.com --type group --id 123456 --output ./repos
 
 # 批量克隆 Gitea 组织
 $PY scripts/batch_clone.py --platform gitea `
