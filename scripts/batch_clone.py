@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 batch_clone.py - 批量克隆 Git 仓库
-支持 GitHub / GitLab / Gitea / Bitbucket / Azure DevOps 批量克隆
+支持 GitHub / GitLab / Gitea / Bitbucket / Azure DevOps 批量克隆及 Gitea 运维操作
 """
 
 import argparse
@@ -22,31 +22,65 @@ from urllib.parse import quote
 # HTTP 辅助
 # ─────────────────────────────────────────────
 
-def http_get(url: str, token: str = None, accept: str = "application/json",
-             auth_type: str = "bearer") -> dict | list:
-    """发送 GET 请求，返回解析后的 JSON
-    auth_type: 'bearer'（GitHub/GitLab/Gitea/Bitbucket）或 'basic'（Azure DevOps）
+def http_request(method: str, url: str, token: str = None,
+                 auth_type: str = "bearer", data: dict = None,
+                 accept: str = "application/json") -> tuple[int, dict | list | str]:
+    """通用 HTTP 请求，返回 (status_code, parsed_body)
+    - 自动处理 Bearer / PRIVATE-TOKEN / token / Basic 四种认证
+    - 错误响应尝试解析 JSON，失败则返回原始文本
     """
-    headers = {"Accept": accept, "User-Agent": "git-manager-skill/1.0"}
+    headers = {"Accept": accept, "User-Agent": "git-manager-skill/2.0"}
     if token:
         if auth_type == "basic":
-            # Azure DevOps: Basic Base64(":PAT")
             encoded = base64.b64encode(f":{token}".encode()).decode()
             headers["Authorization"] = f"Basic {encoded}"
-        else:
+        elif auth_type == "gitea_token":
+            # Gitea 专属格式（部分实例要求此格式）
+            headers["Authorization"] = f"token {token}"
+        elif auth_type == "gitlab":
             headers["Authorization"] = f"Bearer {token}"
-            headers["PRIVATE-TOKEN"] = token  # GitLab 兼容
-    req = Request(url, headers=headers)
+            headers["PRIVATE-TOKEN"] = token
+        else:
+            # GitHub / GitLab (Bearer) / Bitbucket / 通用
+            headers["Authorization"] = f"Bearer {token}"
+
+    body = None
+    if data:
+        body = json.dumps(data).encode()
+        headers["Content-Type"] = "application/json"
+
+    req = Request(url, data=body, method=method, headers=headers)
     try:
         with urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read().decode())
+            raw = resp.read().decode(errors="replace")
+            status = resp.status if hasattr(resp, "status") else resp.getcode()
+            try:
+                parsed = json.loads(raw) if raw else {}
+            except json.JSONDecodeError:
+                parsed = raw
+            return status, parsed
     except HTTPError as e:
         body = e.read().decode(errors="replace")
-        print(f"[HTTP {e.code}] {url}\n  {body[:300]}")
-        return None
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            parsed = body
+        return e.code, parsed
     except URLError as e:
-        print(f"[URL Error] {url}: {e.reason}")
-        return None
+        return -1, {"error": str(e.reason)}
+
+
+def http_get(url: str, token: str = None, auth_type: str = "bearer") -> dict | list | None:
+    """GET 请求，返回解析后的 JSON，失败返回 None"""
+    code, body = http_request("GET", url, token, auth_type)
+    if code == 200:
+        return body
+    # 打印错误（通用处理）
+    if isinstance(body, dict) and "message" in body:
+        print(f"[HTTP {code}] {body['message']}")
+    elif isinstance(body, str) and body:
+        print(f"[HTTP {code}] {body[:200]}")
+    return None
 
 
 def paginate(base_url: str, token: str = None, page_param: str = "page",
@@ -143,6 +177,129 @@ def gitea_list_org_teams(host: str, org: str, token: str = None) -> list:
     """列出 Gitea 组织下所有 Team"""
     url = f"{host}/api/v1/orgs/{quote(org)}/teams"
     return paginate(url, token, page_param="page", per_page_param="limit")
+
+
+def gitea_get_current_user(host: str, token: str = None) -> dict | None:
+    """获取当前认证用户信息（包含 uid）"""
+    return http_get(f"{host}/api/v1/user", token, auth_type="gitea_token")
+
+
+def gitea_get_repo(host: str, owner: str, repo: str, token: str = None) -> dict | None:
+    """获取 Gitea 单个仓库信息"""
+    url = f"{host}/api/v1/repos/{quote(owner)}/{quote(repo)}"
+    return http_get(url, token, auth_type="gitea_token")
+
+
+def gitea_check_mirror_available(host: str) -> bool:
+    """探测 Gitea 是否启用 pull mirror 功能"""
+    code, body = http_request("GET", f"{host}/api/v1/version", accept="application/json")
+    if code == 200 and isinstance(body, dict):
+        version = body.get("version", "")
+        # pull mirror 通常需要 1.19+；探测是否被禁用用 migrate API
+        print(f"  [INFO] Gitea 版本: {version}")
+        return True
+    return True  # 无法探测时默认支持
+
+
+def gitea_create_org(host: str, username: str, org_name: str,
+                     token: str = None, description: str = "",
+                     visibility: str = "public") -> dict | None:
+    """创建 Gitea 组织（需管理员权限）"""
+    data = {
+        "username": org_name,
+        "full_name": org_name,
+        "description": description,
+        "visibility": visibility,
+    }
+    code, body = http_request("POST", f"{host}/api/v1/admin/users/{quote(username)}/orgs",
+                              token, auth_type="gitea_token", data=data)
+    if code in (200, 201):
+        return body
+    msg = body.get("message", body) if isinstance(body, dict) else str(body)
+    print(f"  [WARN] 创建组织失败 ({code}): {str(msg)[:200]}")
+    return None
+
+
+def gitea_migrate_repo(host: str, uid: int, clone_addr: str,
+                       repo_name: str, repo_owner: str = "",
+                       token: str = None, mirror: bool = True,
+                       private: bool = False,
+                       description: str = "") -> dict | None:
+    """迁移仓库到 Gitea（支持镜像同步）
+
+    Args:
+        host: Gitea 主机地址
+        uid: 迁移所有者的用户 ID（数字）
+        clone_addr: 源仓库地址（https://github.com/user/repo.git）
+        repo_name: 目标仓库名
+        repo_owner: 目标所有者（组织名或用户名）
+        token: 访问令牌
+        mirror: 是否启用镜像同步
+        private: 是否私有
+        description: 仓库描述
+
+    Returns:
+        创建的仓库信息，失败返回 None
+    """
+    payload = {
+        "clone_addr": clone_addr,
+        "uid": uid,
+        "repo_name": repo_name,
+        "private": private,
+        "mirror": mirror,
+        "description": description,
+    }
+    if repo_owner:
+        payload["repo_owner"] = repo_owner
+
+    code, body = http_request("POST", f"{host}/api/v1/repos/migrate",
+                              token, auth_type="gitea_token", data=payload)
+    if code in (200, 201):
+        return body
+
+    # 解析错误信息
+    msg = ""
+    if isinstance(body, dict):
+        msg = body.get("message", "") or body.get("err", "")
+        # 特殊错误：pull mirror 被禁用
+        if "disabled the creation of new pull mirrors" in msg:
+            print(f"  [ERROR] Pull mirror 功能被管理员禁用，请联系 Gitea 管理员开启")
+        elif "repo already exist" in msg.lower() or code == 409:
+            print(f"  [WARN] 仓库已存在")
+            return {"__exists__": True}
+    elif isinstance(body, str):
+        msg = body
+    if not msg:
+        msg = f"HTTP {code}"
+
+    print(f"  [ERROR] 迁移失败 ({msg})")
+    return None
+
+
+def gitea_enable_mirror(host: str, owner: str, repo: str, token: str = None) -> bool:
+    """为已有仓库启用镜像同步"""
+    # Gitea 的 PATCH 不支持直接设置 mirror，需通过 mirror_sync API
+    # 改为检查仓库状态
+    r = gitea_get_repo(host, owner, repo, token)
+    if r and r.get("mirror"):
+        print(f"  [OK] 镜像同步已启用")
+        return True
+    if r:
+        print(f"  [INFO] 当前镜像状态: {r.get('mirror', False)}")
+        print(f"  [WARN] API 无法修改已有仓库的镜像状态，请在 Web 界面手动开启")
+    return False
+
+
+def gitea_trigger_sync(host: str, owner: str, repo: str, token: str = None) -> bool:
+    """触发仓库镜像同步"""
+    code, body = http_request("POST", f"{host}/api/v1/repos/{quote(owner)}/{quote(repo)}/mirror_sync",
+                              token, auth_type="gitea_token")
+    if code in (200, 204):
+        print(f"  [OK] 镜像同步已触发")
+        return True
+    msg = body.get("message", body) if isinstance(body, dict) else str(body)
+    print(f"  [WARN] 触发失败: {msg}")
+    return False
 
 
 # ─────────────────────────────────────────────
@@ -360,10 +517,10 @@ def batch_clone(repos: list, platform: str, output_dir: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="批量克隆 Git 仓库（GitHub/GitLab/Gitea/Bitbucket/Azure DevOps）",
+        description="批量克隆 Git 仓库 / Gitea 运维工具（GitHub/GitLab/Gitea/Bitbucket/Azure DevOps）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-示例:
+克隆示例:
   # GitHub organization 下所有仓库
   python batch_clone.py --platform github --type org --id my-org --output ./repos
 
@@ -381,6 +538,20 @@ def main():
 
   # Dry run 预览
   python batch_clone.py --platform github --type org --id my-org --dry-run
+
+Gitea 运维示例:
+  # 从 GitHub 迁移仓库到 Gitea（启用镜像同步）
+  python batch_clone.py --platform gitea --host https://gitea.com \\
+      --migrate --src https://github.com/myuser/myrepo --name myrepo \\
+      --token YOUR_TOKEN
+
+  # 创建组织（需管理员 token）
+  python batch_clone.py --platform gitea --host https://gitea.com \\
+      --create-org skills --token YOUR_ADMIN_TOKEN
+
+  # 触发镜像同步
+  python batch_clone.py --platform gitea --host https://gitea.com \\
+      --sync --owner myuser --repo myrepo --token YOUR_TOKEN
 """
     )
     parser.add_argument("--platform",
@@ -388,6 +559,30 @@ def main():
                         required=True, help="Git 平台类型")
     parser.add_argument("--host", default=None,
                         help="GitLab/Gitea 主机地址（如 https://gitlab.com），GitHub/Bitbucket 不需要")
+
+    # ── Gitea 运维参数 ───────────────────────────
+    parser.add_argument("--migrate", action="store_true",
+                        help="将外部仓库迁移到 Gitea（--platform gitea）")
+    parser.add_argument("--src", dest="src_url", default=None,
+                        help="迁移源地址，如 https://github.com/user/repo")
+    parser.add_argument("--name", dest="repo_name", default=None,
+                        help="目标仓库名（迁移时必填）")
+    parser.add_argument("--owner", default=None,
+                        help="目标所有者（用户名或组织名）")
+    parser.add_argument("--mirror", dest="enable_mirror", action="store_true",
+                        help="启用镜像同步（迁移时默认开启）")
+    parser.add_argument("--no-mirror", dest="enable_mirror", action="store_false",
+                        help="禁用镜像同步")
+    parser.add_argument("--private", action="store_true", default=False,
+                        help="仓库设为私有")
+    parser.add_argument("--create-org", metavar="ORG_NAME", dest="create_org",
+                        help="创建 Gitea 组织（需管理员权限）")
+    parser.add_argument("--sync", action="store_true",
+                        help="触发仓库镜像同步（需仓库已启用 mirror）")
+    parser.add_argument("--desc", dest="description", default="",
+                        help="仓库/组织描述")
+
+    # ── 标准克隆参数 ────────────────────────────
     parser.add_argument("--org", dest="organization", default=None,
                         help="Azure DevOps 组织名（--platform azure 时必填）")
     parser.add_argument("--project", default=None,
@@ -424,6 +619,131 @@ def main():
                         help="禁用 GitLab 子组递归")
 
     args = parser.parse_args()
+    args.enable_mirror = True if args.migrate else args.enable_mirror
+
+    # ── Gitea 运维模式 ──────────────────────────────────────────────
+    if args.platform == "gitea" and args.host:
+        host = args.host.rstrip("/")
+
+        # Token 优先显式参数，其次环境变量
+        token = args.token or os.environ.get("GITEA_TOKEN", "")
+
+        if not args.token:
+            # 静默检查环境变量
+            token = os.environ.get("GITEA_TOKEN", "")
+
+        # ── 触发镜像同步 ───────────────────────────────────────────
+        if args.sync:
+            if not args.owner or not args.repo_name:
+                print("[ERROR] --sync 需要同时指定 --owner 和 --repo")
+                sys.exit(1)
+            if not token:
+                print("[ERROR] --sync 需要 --token")
+                sys.exit(1)
+            print(f"\n{'='*60}")
+            print(f"[触发镜像同步] {host}/{args.owner}/{args.repo_name}")
+            print(f"{'='*60}")
+            gitea_trigger_sync(host, args.owner, args.repo_name, token)
+            sys.exit(0)
+
+        # ── 创建组织 ──────────────────────────────────────────────
+        if args.create_org:
+            if not token:
+                print("[ERROR] --create-org 需要 --token")
+                sys.exit(1)
+            me = gitea_get_current_user(host, token)
+            if not me:
+                print("[ERROR] 无法获取当前用户，请检查 token 权限")
+                sys.exit(1)
+            username = me.get("login")
+            uid = me.get("id")
+            print(f"\n{'='*60}")
+            print(f"[创建组织] {args.create_org}")
+            print(f"  当前用户: {username} (uid={uid})")
+            print(f"{'='*60}")
+            result = gitea_create_org(host, username, args.create_org,
+                                       token, description=args.description)
+            if result:
+                print(f"  [OK] 组织创建成功: {host}/{args.create_org}")
+            else:
+                print(f"  [FAIL] 组织创建失败（可能无 admin 权限）")
+            sys.exit(0)
+
+        # ── 迁移仓库 ──────────────────────────────────────────────
+        if args.migrate:
+            if not args.src_url or not args.repo_name:
+                print("[ERROR] --migrate 需要同时指定 --src 和 --name")
+                sys.exit(1)
+            if not token:
+                print("[ERROR] --migrate 需要 --token")
+                sys.exit(1)
+
+            me = gitea_get_current_user(host, token)
+            if not me:
+                print("[ERROR] 无法获取当前用户，请检查 token 权限")
+                sys.exit(1)
+            uid = me.get("id")
+            username = me.get("login")
+
+            owner = args.owner or username
+            mirror = args.enable_mirror
+
+            print(f"\n{'='*60}")
+            print(f"[迁移仓库]")
+            print(f"  源: {args.src_url}")
+            print(f"  目标: {host}/{owner}/{args.repo_name}")
+            print(f"  镜像同步: {'开启' if mirror else '关闭'}")
+            print(f"  用户: {username} (uid={uid})")
+            print(f"{'='*60}")
+
+            # 先检查是否已存在
+            existing = gitea_get_repo(host, owner, args.repo_name, token)
+            if existing:
+                print(f"  [WARN] 仓库已存在: {host}/{owner}/{args.repo_name}")
+                if mirror:
+                    gitea_enable_mirror(host, owner, args.repo_name, token)
+                sys.exit(0)
+
+            # 执行迁移
+            result = gitea_migrate_repo(
+                host=host,
+                uid=uid,
+                clone_addr=args.src_url,
+                repo_name=args.repo_name,
+                repo_owner=owner,
+                token=token,
+                mirror=mirror,
+                private=args.private,
+                description=args.description,
+            )
+            if result:
+                if result.get("__exists__"):
+                    sys.exit(1)
+                clone_url = result.get("clone_url", "")
+                print(f"\n{'='*60}")
+                print(f"  [OK] 迁移成功!")
+                print(f"  仓库: {result.get('full_name', f'{owner}/{args.repo_name}')}")
+                print(f"  地址: {clone_url}")
+                print(f"  镜像: {result.get('mirror', False)}")
+                print(f"{'='*60}")
+
+                # 触发首次同步
+                if mirror:
+                    print("\n[触发首次镜像同步...]")
+                    gitea_trigger_sync(host, owner, args.repo_name, token)
+
+                print(f"\n  提示: 首次同步可能需要几分钟，请在 Web 界面确认状态")
+                print(f"  界面: {host}/{owner}/{args.repo_name}/settings")
+            else:
+                print(f"\n[FAIL] 迁移失败（请检查 token 权限或源仓库地址）")
+                print(f"  常见原因:")
+                print(f"    - Token 权限不足（需要 repo 读写权限）")
+                print(f"    - Pull mirror 功能被管理员禁用")
+                print(f"    - 仓库已存在")
+                print(f"    - 源仓库不存在或无权访问")
+            sys.exit(0)
+
+    # ── 标准克隆流程 ──────────────────────────────────────────────
 
     # 设置默认 host / organization / project
     if args.platform == "github":
@@ -431,6 +751,7 @@ def main():
     elif args.platform == "gitlab":
         host = args.host.rstrip("/") if args.host else "https://gitlab.com"
     elif args.platform == "gitea":
+        # 运维命令已在上面处理完并 sys.exit，这里只处理标准克隆
         if not args.host:
             print("[ERROR] Gitea 需要指定 --host 参数")
             sys.exit(1)

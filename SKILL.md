@@ -22,7 +22,7 @@ Git 仓库管理技能，支持 **GitHub、GitLab、Gitea、Bitbucket、Azure De
 | 脚本 | 功能 |
 |------|------|
 | `scripts/git_ops.py` | 单仓库完整操作：clone / pull / fetch / branch / checkout / merge / rebase / **reflog / describe / worktree / grep / cherry-pick / revert / bisect / stash** / diff / log / status / show / blame / tag / remote / clean / gc / **lfs** |
-| `scripts/batch_clone.py` | 批量克隆：覆盖 GitHub/GitLab/Gitea/Bitbucket/Azure DevOps 五大平台，支持 **--limit / --lfs / --ssh / --workers / --format json** |
+| `scripts/batch_clone.py` | 批量克隆：覆盖 GitHub/GitLab/Gitea/Bitbucket/Azure DevOps 五大平台；Gitea 运维：**--migrate（迁移+镜像同步）/ --create-org / --sync（触发同步）**，支持 **--limit / --lfs / --ssh / --workers / --format json** |
 | `scripts/batch_pull.py` | 批量更新：扫描本地目录下所有 git 仓库并批量 pull/fetch，支持并发 |
 | `scripts/git_lfs.py` | Git LFS 专用工具：批量跟踪模式、迁移、检查仓库 LFS 状态 |
 
@@ -279,6 +279,24 @@ python scripts/batch_clone.py --platform gitlab --host https://gitlab.com \
 python scripts/batch_clone.py --platform gitea --host https://git.example.com \
   --type org --id myorg --output ./repos --lfs --workers 8
 
+# 从 GitHub 迁移仓库到 Gitea（启用镜像同步）
+python scripts/batch_clone.py --platform gitea --host https://gitea.com \
+  --migrate --src https://github.com/myuser/myrepo --name myrepo \
+  --token YOUR_TOKEN
+
+# 指定目标组织
+python scripts/batch_clone.py --platform gitea --host https://gitea.com \
+  --migrate --src https://github.com/myuser/myrepo --name myrepo \
+  --owner myorg --token YOUR_TOKEN
+
+# 创建 Gitea 组织（需管理员 token）
+python scripts/batch_clone.py --platform gitea --host https://gitea.com \
+  --create-org skills --desc "AI Skills Collection" --token YOUR_ADMIN_TOKEN
+
+# 触发 Gitea 仓库镜像同步
+python scripts/batch_clone.py --platform gitea --host https://gitea.com \
+  --sync --owner myuser --repo myrepo --token YOUR_TOKEN
+
 # 通过环境变量设置 token（更安全，不暴露在命令行）
 export GITLAB_TOKEN=glpat-xxx
 python scripts/batch_clone.py --platform gitlab --host https://gitlab.com \
@@ -362,7 +380,8 @@ Get-ChildItem -Recurse -Directory | ForEach-Object {
 5. **冲突处理**：merge/rebase 遇到冲突会停止，需手动解决后 `git add` + `git merge/rebase --continue`
 6. **GitLab group_id**：进入 Group → Settings → General 查看数字 ID；也可用 URL 编码的路径（如 `my-group%2Fsub-group`）
 7. **Gitea 分页**：使用 `limit` 参数（非 `per_page`），脚本已自动处理差异
-8. **Git LFS**：确保目标机器已安装 `git-lfs`，可用 `git lfs install` 初始化
+8. **Gitea 镜像同步**：需 Gitea 管理员在 `app.ini` 中设置 `PULL_REQUEST_PUSH_MIRRORS=true`；如返回 `"administrator has disabled the creation of new pull mirrors"` 请联系管理员开启
+9. **Git LFS**：确保目标机器已安装 `git-lfs`，可用 `git lfs install` 初始化
 
 ---
 
@@ -375,6 +394,9 @@ Get-ChildItem -Recurse -Directory | ForEach-Object {
 | "用我的 Gitea 账号克隆所有仓库" | `batch_clone.py` | `--platform gitea --type user --id <username>` |
 | "克隆 Bitbucket workspace 下所有仓库" | `batch_clone.py` | `--platform bitbucket --type workspace --id <workspace>` |
 | "克隆 Azure DevOps 项目下所有仓库" | `batch_clone.py` | `--platform azure --org <org> --project <proj>` |
+| "把 GitHub 仓库迁移到 Gitea" | `batch_clone.py` | `--platform gitea --migrate --src <url> --name <repo>` |
+| "在 Gitea 上创建组织" | `batch_clone.py` | `--platform gitea --create-org <name>` |
+| "触发 Gitea 镜像同步" | `batch_clone.py` | `--platform gitea --sync --owner <u> --repo <r>` |
 | "克隆后启用 LFS" | `batch_clone.py` | `--platform github --type user --id <user> --lfs` |
 | "只克隆前 5 个仓库" | `batch_clone.py` | `--platform github --type org --id <org> --limit 5` |
 | "快速并发克隆 50 个仓库" | `batch_clone.py` | `--platform github --type org --id <org> --workers 4` |

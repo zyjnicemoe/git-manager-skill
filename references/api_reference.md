@@ -78,14 +78,49 @@ PRIVATE-TOKEN: glpat-xxxxxxxxxxxxxx
 | 列出用户仓库 | `GET {host}/api/v1/users/{username}/repos?limit=50&page=N` |
 | 获取单个仓库 | `GET {host}/api/v1/repos/{owner}/{repo}` |
 | 搜索仓库 | `GET {host}/api/v1/repos/search?q={query}&limit=50&page=N` |
+| 获取当前用户 | `GET {host}/api/v1/user` |
+| 迁移仓库 | `POST {host}/api/v1/repos/migrate` |
+| 创建组织（admin） | `POST {host}/api/v1/admin/users/{username}/orgs` |
+| 触发镜像同步 | `POST {host}/api/v1/repos/{owner}/{repo}/mirror_sync` |
 
-**认证方式**：
+**认证方式**（按兼容性排序）：
 ```
+# 方式1: Bearer（推荐，兼容最广）
 Authorization: Bearer your_access_token
-```
-或 Basic Auth：
-```
+
+# 方式2: token 前缀（部分 Gitea 实例要求此格式）
+Authorization: token your_access_token
+
+# 方式3: Basic Auth
 Authorization: Basic base64(username:password)
+```
+
+**仓库迁移请求体**（`POST /repos/migrate`）：
+```json
+{
+  "clone_addr": "https://github.com/user/repo.git",
+  "uid": 1,
+  "repo_name": "repo-name",
+  "repo_owner": "myorg",
+  "private": false,
+  "mirror": true,
+  "description": "My mirrored repo"
+}
+```
+
+**常见迁移错误**：
+- `"administrator has disabled the creation of new pull mirrors"` → 管理员禁用了 pull mirror，需在 Gitea 设置中开启
+- `"repo already exist"` → 仓库已存在
+- 403 Forbidden → Token 权限不足（需要 `repo` 读写权限 + `admin:org` 创建组织）
+
+**组织创建请求体**（`POST /admin/users/{username}/orgs`）：
+```json
+{
+  "username": "skills",
+  "full_name": "Skills",
+  "description": "AI Skills Collection",
+  "visibility": "public"
+}
 ```
 
 **仓库对象关键字段**：
@@ -96,7 +131,8 @@ Authorization: Basic base64(username:password)
   "ssh_url": "git@gitea.example.com:user/repo.git",
   "archived": false,
   "default_branch": "main",
-  "private": false
+  "private": false,
+  "mirror": true
 }
 ```
 
@@ -181,6 +217,8 @@ Authorization: Basic base64(":PAT")
 ### Gitea Access Token
 1. 访问 Gitea → User Settings → Applications
 2. 填写 Token Name，选择权限后生成
+3. **迁移仓库**：需要 `repo` 读写权限
+4. **创建组织**：需要管理员权限的 Token（`admin:org`）
 
 ### Bitbucket App Password
 1. 访问 Bitbucket → Personal Settings → App passwords

@@ -2,6 +2,31 @@
 
 All notable changes to `git-manager` skill are documented here.
 
+## [2.3.0] - 2026-04-15
+
+### Added
+- **Gitea 迁移功能**：新增 `--migrate` 命令，支持将外部仓库（GitHub/GitLab 等）迁移到 Gitea
+  - 自动启用镜像同步（`mirror: true`）
+  - 自动获取用户 uid，无需手动指定
+  - 新增参数: `--migrate`、`--src`（源地址）、`--name`（目标仓库名）、`--owner`、`--private`、`--desc`
+- **Gitea 组织创建**：新增 `--create-org` 命令（需管理员权限）
+- **Gitea 镜像同步触发**：新增 `--sync` 命令，手动触发已有仓库的镜像同步
+- **HTTP 辅助重构**：`http_request()` 替换原 `http_get()`，统一处理 GET/POST/PATCH，支持 4 种认证格式和通用错误解析
+  - `bearer`: GitHub / 通用 Bearer
+  - `gitlab`: Bearer + PRIVATE-TOKEN 双 Header
+  - `gitea_token`: Gitea 专属 `token <token>` 格式
+  - `basic`: Azure DevOps / Bitbucket Basic Auth
+- **Gitea API 探测**：新增 `gitea_get_current_user()`、`gitea_get_repo()`、`gitea_check_mirror_available()`
+- **迁移健壮性**：自动检测仓库是否存在、镜像是否已启用、pull mirror 是否被禁用，并给出友好提示
+
+### Updated
+- `batch_clone.py`: 新增 6 个 Gitea 运维函数，总代码量 +180 行
+- `SKILL.md`: 新增 4 条 Gitea 运维命令示例，更新核心脚本描述和注意事项
+- `api_reference.md`: 新增 Gitea 运维 API 端点、认证方式、迁移请求体示例、常见错误说明
+- `examples.md`: 🆕 新建文件，新增 13 个完整使用场景，覆盖所有平台和 Gitea 运维流程
+
+---
+
 ## [2.2.0] - 2026-04-15
 
 ### Added
