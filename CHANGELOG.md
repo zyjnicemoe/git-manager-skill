@@ -2,6 +2,26 @@
 
 All notable changes to `git-manager` skill are documented here.
 
+## [2.2.0] - 2026-04-15
+
+### Added
+- **Bitbucket 支持**：新增 `--platform bitbucket`，支持按 workspace 批量克隆仓库
+  - API: `GET https://api.bitbucket.org/2.0/repositories/{workspace}`
+  - 认证: Bearer token 或 Basic Auth
+- **Azure DevOps 支持**：新增 `--platform azure`，支持按 Project 批量克隆仓库
+  - API: `GET https://dev.azure.com/{org}/{project}/_apis/git/repositories`
+  - 认证: Basic Auth (`base64(":PAT")`)
+  - 新增参数: `--org`（组织名）、`--project`（项目名）
+- **http_get 增强**：支持 `auth_type` 参数，区分 bearer 和 basic 认证
+
+### Updated
+- `batch_clone.py` platform choices: github / gitlab / gitea / **bitbucket** / **azure**
+- `SKILL.md`: 更新平台支持列表，新增 Bitbucket/Azure DevOps 示例
+- `api_reference.md`: 新增 Bitbucket 和 Azure DevOps API 文档
+- `examples.md`: 新增场景四（Bitbucket）和场景五（Azure DevOps）
+
+---
+
 ## [2.1.0] - 2026-04-14
 
 ### Added
@@ -55,3 +75,15 @@ All notable changes to `git-manager` skill are documented here.
 - **`git_ops.py`** - 单仓库 Git 操作基础命令
 - **`references/api_reference.md`** - 各平台 API 端点速查
 - **`references/examples.md`** - 完整使用示例
+
+### Improved
+- `log --reverse`: 逆序显示历史
+- `log --follow`: 追踪文件重命名历史
+- `diff --color-words`: 词级别 diff，更清晰
+- `diff --ws-error-highlight`: 高亮空白字符变更
+- `branch -u/--set-upstream-to`: 设置上游分支
+- `stash -u/--include-untracked`: stash 时包含未跟踪文件
+
+### Fixed
+- `stash pop`: 修复不支持 stash ID（如 `stash@{2}`）的 bug
+- `log --format`: 修复与 `--oneline` dest 冲突的问题

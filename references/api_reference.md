@@ -102,6 +102,70 @@ Authorization: Basic base64(username:password)
 
 ---
 
+### Bitbucket
+
+| 操作 | 端点 |
+|------|------|
+| 列出 Workspace 仓库 | `GET https://api.bitbucket.org/2.0/repositories/{workspace}?pagelen=100&page=N` |
+
+**认证方式**：
+```
+Authorization: Bearer BB_TOKEN
+```
+或 Basic Auth：`base64(email:token)`
+
+**仓库对象关键字段**：
+```json
+{
+  "name": "repo-name",
+  "slug": "repo-slug",
+  "links": {
+    "clone": [
+      {"href": "https://bitbucket.org/workspace/repo.git", "name": "https"},
+      {"href": "git@bitbucket.org:workspace/repo.git", "name": "ssh"}
+    ]
+  },
+  "is_private": false,
+  "project": {"key": "PROJ", "name": "Project Name"}
+}
+```
+
+**Token 创建**：
+1. 访问 Bitbucket → Personal Settings → App passwords
+2. 创建新密码，勾选 `read:repository` 权限
+
+---
+
+### Azure DevOps
+
+| 操作 | 端点 |
+|------|------|
+| 列出 Project 仓库 | `GET https://dev.azure.com/{org}/{project}/_apis/git/repositories?api-version=6.0` |
+
+**认证方式**：
+```
+Authorization: Basic base64(":PAT")
+```
+
+**仓库对象关键字段**：
+```json
+{
+  "id": "guid-repo-id",
+  "name": "repo-name",
+  "project": {"name": "Project Name"},
+  "defaultBranch": "refs/heads/main"
+}
+```
+**Clone URL 构造**：
+- HTTPS: `https://dev.azure.com/{org}/{project}/_git/{repo}`
+- SSH: `git@ssh.dev.azure.com:v3/{org}/{project}/{repo}`
+
+**Token 创建**：
+1. 访问 Azure DevOps → User Settings → Personal Access Tokens
+2. 创建 Token，范围选择 `Code` → `Read`
+
+---
+
 ## Token 创建指南
 
 ### GitHub Personal Access Token
@@ -117,6 +181,14 @@ Authorization: Basic base64(username:password)
 ### Gitea Access Token
 1. 访问 Gitea → User Settings → Applications
 2. 填写 Token Name，选择权限后生成
+
+### Bitbucket App Password
+1. 访问 Bitbucket → Personal Settings → App passwords
+2. 创建密码，勾选 `read:repository` 权限
+
+### Azure DevOps Personal Access Token
+1. 访问 Azure DevOps → User Settings → Personal Access Tokens
+2. 创建 Token，作用域选择 `Code` → `Read`
 
 ---
 

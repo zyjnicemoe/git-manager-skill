@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
 batch_clone.py - 批量克隆 Git 仓库
-支持 GitHub / GitLab / Gitea 的 Group、User、Organization 下所有仓库批量克隆
+支持 GitHub / GitLab / Gitea / Bitbucket / Azure DevOps 批量克隆
 """
 
 import argparse
+import base64
 import json
 import os
 import subprocess
@@ -21,12 +22,20 @@ from urllib.parse import quote
 # HTTP 辅助
 # ─────────────────────────────────────────────
 
-def http_get(url: str, token: str = None, accept: str = "application/json") -> dict | list:
-    """发送 GET 请求，返回解析后的 JSON"""
+def http_get(url: str, token: str = None, accept: str = "application/json",
+             auth_type: str = "bearer") -> dict | list:
+    """发送 GET 请求，返回解析后的 JSON
+    auth_type: 'bearer'（GitHub/GitLab/Gitea/Bitbucket）或 'basic'（Azure DevOps）
+    """
     headers = {"Accept": accept, "User-Agent": "git-manager-skill/1.0"}
     if token:
-        headers["Authorization"] = f"Bearer {token}"
-        headers["PRIVATE-TOKEN"] = token  # GitLab 兼容
+        if auth_type == "basic":
+            # Azure DevOps: Basic Base64(":PAT")
+            encoded = base64.b64encode(f":{token}".encode()).decode()
+            headers["Authorization"] = f"Basic {encoded}"
+        else:
+            headers["Authorization"] = f"Bearer {token}"
+            headers["PRIVATE-TOKEN"] = token  # GitLab 兼容
     req = Request(url, headers=headers)
     try:
         with urlopen(req, timeout=30) as resp:
@@ -137,6 +146,52 @@ def gitea_list_org_teams(host: str, org: str, token: str = None) -> list:
 
 
 # ─────────────────────────────────────────────
+# Bitbucket
+# ─────────────────────────────────────────────
+
+def bitbucket_list_workspace_repos(workspace: str, token: str = None) -> list:
+    """列出 Bitbucket Workspace 下所有仓库"""
+    url = f"https://api.bitbucket.org/2.0/repositories/{quote(workspace)}"
+    repos = paginate(url, token, page_param="page", per_page_param="pagelen")
+    # 标准化字段，便于后续统一处理
+    for r in repos:
+        r["name"] = r.get("name", r.get("slug", "unknown"))
+        r["archived"] = r.get("is_private", False)  # Bitbucket 无 archived 字段
+        # 提取 clone URL
+        clone_links = r.get("links", {}).get("clone", [])
+        for c in clone_links:
+            if c.get("name") == "https":
+                r["clone_url"] = c.get("href", "")
+            elif c.get("name") == "ssh":
+                r["ssh_url"] = c.get("href", "")
+    return repos
+
+
+# ─────────────────────────────────────────────
+# Azure DevOps
+# ─────────────────────────────────────────────
+
+def azure_list_project_repos(organization: str, project: str, token: str = None) -> list:
+    """列出 Azure DevOps Project 下所有 Git 仓库"""
+    url = (f"https://dev.azure.com/{quote(organization)}/"
+           f"{quote(project)}/_apis/git/repositories?api-version=6.0")
+    data = http_get(url, token, auth_type="basic")
+    if not data:
+        return []
+    repos = data.get("value", [])
+    # 标准化字段
+    for r in repos:
+        r["name"] = r.get("name", "unknown")
+        r["archived"] = False
+        # 构造 clone URL（Azure DevOps API 不直接返回 clone URL）
+        proj = r.get("project", {}).get("name", project)
+        repo_name = r.get("name", "unknown")
+        r["clone_url"] = f"https://dev.azure.com/{organization}/{proj}/_git/{quote(repo_name)}"
+        r["ssh_url"] = f"git@ssh.dev.azure.com:v3/{organization}/{proj}/{quote(repo_name)}"
+    return repos
+
+
+# ─────────────────────────────────────────────
 # 提取 clone URL
 # ─────────────────────────────────────────────
 
@@ -149,6 +204,12 @@ def extract_clone_url(repo_info: dict, platform: str, use_ssh: bool) -> tuple[st
         name = repo_info.get("path", repo_info.get("name", "unknown"))
         url = repo_info.get("ssh_url_to_repo" if use_ssh else "http_url_to_repo", "")
     elif platform == "gitea":
+        name = repo_info.get("name", "unknown")
+        url = repo_info.get("ssh_url" if use_ssh else "clone_url", "")
+    elif platform == "bitbucket":
+        name = repo_info.get("name", "unknown")
+        url = repo_info.get("ssh_url" if use_ssh else "clone_url", "")
+    elif platform == "azure":
         name = repo_info.get("name", "unknown")
         url = repo_info.get("ssh_url" if use_ssh else "clone_url", "")
     else:
@@ -299,7 +360,7 @@ def batch_clone(repos: list, platform: str, output_dir: str,
 
 def main():
     parser = argparse.ArgumentParser(
-        description="批量克隆 Git 仓库（GitHub/GitLab/Gitea）",
+        description="批量克隆 Git 仓库（GitHub/GitLab/Gitea/Bitbucket/Azure DevOps）",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例:
@@ -312,17 +373,25 @@ def main():
   # Gitea 用户仓库（使用 SSH）
   python batch_clone.py --platform gitea --host https://gitea.example.com --type user --id johndoe --ssh
 
-  # 按 project-id 克隆 GitLab 单个项目
-  python batch_clone.py --platform gitlab --host https://gitlab.com --type project --id 456 --token glpat-xxx
+  # Bitbucket workspace 下所有仓库
+  python batch_clone.py --platform bitbucket --type workspace --id my-workspace --token BB_TOKEN
+
+  # Azure DevOps 项目下所有仓库
+  python batch_clone.py --platform azure --org my-org --project MyProject --token AZURE_PAT
 
   # Dry run 预览
   python batch_clone.py --platform github --type org --id my-org --dry-run
 """
     )
-    parser.add_argument("--platform", choices=["github", "gitlab", "gitea"], required=True,
-                        help="Git 平台类型")
+    parser.add_argument("--platform",
+                        choices=["github", "gitlab", "gitea", "bitbucket", "azure"],
+                        required=True, help="Git 平台类型")
     parser.add_argument("--host", default=None,
-                        help="GitLab/Gitea 主机地址（如 https://gitlab.com），GitHub 不需要")
+                        help="GitLab/Gitea 主机地址（如 https://gitlab.com），GitHub/Bitbucket 不需要")
+    parser.add_argument("--org", dest="organization", default=None,
+                        help="Azure DevOps 组织名（--platform azure 时必填）")
+    parser.add_argument("--project", default=None,
+                        help="Azure DevOps 项目名（--platform azure 时必填）")
     parser.add_argument("--type", dest="id_type",
                         choices=["org", "group", "user", "project"],
                         required=True, help="ID 类型（org/group/user/project）")
@@ -356,7 +425,7 @@ def main():
 
     args = parser.parse_args()
 
-    # 设置默认 host
+    # 设置默认 host / organization / project
     if args.platform == "github":
         host = "https://api.github.com"
     elif args.platform == "gitlab":
@@ -366,6 +435,10 @@ def main():
             print("[ERROR] Gitea 需要指定 --host 参数")
             sys.exit(1)
         host = args.host.rstrip("/")
+    elif args.platform == "azure":
+        if not args.organization or not args.project:
+            print("[ERROR] Azure DevOps 需要指定 --org 和 --project 参数")
+            sys.exit(1)
 
     # 获取仓库列表
     # Token 优先使用显式参数，其次使用环境变量
@@ -421,6 +494,20 @@ def main():
             repos = gitea_list_org_repos(host, tid, token)
         elif args.id_type == "user":
             repos = gitea_list_user_repos(host, tid, token)
+
+    elif platform == "bitbucket":
+        if args.id_type in ("workspace", "org", "group"):
+            repos = bitbucket_list_workspace_repos(tid, args.token)
+        elif args.id_type == "user":
+            repos = bitbucket_list_workspace_repos(tid, args.token)
+
+    elif platform == "azure":
+        if args.id_type in ("project",):
+            repos = azure_list_project_repos(args.organization, args.project, args.token)
+        elif args.id_type in ("org",):
+            # Azure 没有 org 级别的 repo，只能按 project 操作
+            print("[ERROR] Azure DevOps 不支持 org 级别，请使用 --type project --project <项目名>")
+            sys.exit(1)
 
     if repos is None:
         repos = []

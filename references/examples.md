@@ -114,7 +114,62 @@ python scripts/batch_clone.py \
 
 ---
 
-## 场景四：批量拉取本地仓库更新
+## 场景四：批量克隆 Bitbucket Workspace 仓库
+
+```bash
+# Bitbucket workspace 下所有仓库
+python scripts/batch_clone.py \
+  --platform bitbucket \
+  --type workspace \
+  --id my-workspace \
+  --token BB_TOKEN \
+  --output ./bitbucket-repos
+
+# 仅克隆公开仓库
+python scripts/batch_clone.py \
+  --platform bitbucket \
+  --type workspace \
+  --id my-workspace \
+  --token BB_TOKEN \
+  --filter frontend \
+  --output ./frontend-repos
+```
+
+---
+
+## 场景五：批量克隆 Azure DevOps 项目仓库
+
+```bash
+# Azure DevOps 项目下所有仓库（需要 PAT）
+python scripts/batch_clone.py \
+  --platform azure \
+  --org my-organization \
+  --project MyProject \
+  --token AZURE_PAT \
+  --output ./azure-repos
+
+# 使用 SSH 克隆
+python scripts/batch_clone.py \
+  --platform azure \
+  --org my-organization \
+  --project MyProject \
+  --token AZURE_PAT \
+  --ssh \
+  --output ./azure-repos
+
+# 限制克隆前 10 个仓库
+python scripts/batch_clone.py \
+  --platform azure \
+  --org my-organization \
+  --project MyProject \
+  --token AZURE_PAT \
+  --limit 10 \
+  --output ./azure-repos
+```
+
+---
+
+## 场景六：批量拉取本地仓库更新
 
 ```bash
 # 更新目录下所有仓库
@@ -141,7 +196,7 @@ python scripts/batch_pull.py ./repos --dry-run
 
 ---
 
-## 场景五：单仓库基础操作
+## 场景七：单仓库基础操作
 
 ```bash
 # 克隆单个仓库
@@ -171,7 +226,7 @@ python scripts/git_ops.py status ./my-repo
 
 ---
 
-## 场景六：已有仓库目录批量更新（克隆时使用 --update）
+## 场景八：已有仓库目录批量更新（克隆时使用 --update）
 
 ```bash
 # 第一次克隆
@@ -199,6 +254,8 @@ python scripts/batch_clone.py --token YOUR_TOKEN ...
 export GITHUB_TOKEN=ghp_xxx
 export GITLAB_TOKEN=glpat_xxx
 export GITEA_TOKEN=your_token
+export BITBUCKET_TOKEN=BB_TOKEN
+export AZURE_TOKEN=AZURE_PAT
 
 # 在脚本中读取（需修改脚本或由 WorkBuddy 传递）
 ```
