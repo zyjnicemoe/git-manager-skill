@@ -1,8 +1,10 @@
 # Git Manager
 
+> Author: zhuyijun · https://zyjblogs.cn
+
 ### Overview
 
-`git-manager` is a WorkBuddy skill for full-featured Git repository management across GitHub, GitLab, and Gitea platforms. It supports batch cloning, pulling, merging, rebasing, committing, staging area operations, Git LFS management, and more — all via simple command-line scripts with zero extra dependencies (Python 3.8+, standard library only).
+`git-manager` is a powerful Git repository management tool for full-featured operations across GitHub, GitLab, and Gitea platforms. It supports batch cloning, pulling, merging, rebasing, committing, staging area operations, Git LFS management, and more — all via simple command-line scripts with zero extra dependencies (Python 3.8+, standard library only).
 
 ### Features
 
@@ -19,7 +21,7 @@
 
 ```
 git-manager/
-├── SKILL.md                 # Full skill definition (auto-loaded by WorkBuddy)
+├── SKILL.md                 # Skill definition file
 ├── README.md                # Chinese documentation
 ├── README_en.md             # This file (English documentation)
 ├── scripts/

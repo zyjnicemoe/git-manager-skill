@@ -1,8 +1,10 @@
 # Git Manager
 
+> 作者：zhuyijun · https://zyjblogs.cn
+
 ### 概述
 
-`git-manager` 是 WorkBuddy 的 Git 仓库管理技能，支持 GitHub、GitLab、Gitea 全平台的**批量克隆、批量拉取、合并、衍合、提交、暂存区操作、Git LFS 管理**等功能。所有脚本基于 Python 标准库实现，无需额外安装依赖，开箱即用。
+`git-manager` 是专业的 Git 仓库管理工具，支持 GitHub、GitLab、Gitea 全平台的**批量克隆、批量拉取、合并、衍合、提交、暂存区操作、Git LFS 管理**等功能。所有脚本基于 Python 标准库实现，无需额外安装依赖，开箱即用。
 
 ### 功能一览
 
@@ -19,7 +21,7 @@
 
 ```
 git-manager/
-├── SKILL.md                 # 技能主文件（WorkBuddy 自动加载）
+├── SKILL.md                 # 技能主文件
 ├── README.md                # 中文使用说明
 ├── README_en.md             # English documentation
 ├── scripts/
@@ -35,7 +37,7 @@ git-manager/
 ### 快速上手
 
 ```powershell
-# Python 解释器路径（WorkBuddy 托管运行时）
+# Python 解释器路径
 $PY = "C:\Users\zhuyi\.workbuddy\binaries\python\versions\3.13.12\python.exe"
 
 # 批量克隆 GitHub 用户前 5 个仓库，启用 LFS

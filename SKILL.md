@@ -7,9 +7,11 @@ description: >
   cloning by group ID, project ID, or user ID, and full-featured Git workflow including
   commit operations and LFS. Use this skill for any multi-repo management,
   synchronization, or Git workflow automation tasks.
+author: zhuyijun
+url: https://zyjblogs.cn
 ---
 
-# Git Manager Skill
+# Git Manager
 
 Git 仓库管理技能，支持 GitHub、GitLab、Gitea 等平台的**克隆、拉取、合并、衍合、提交、暂存区操作、Git LFS**，以及按 group ID、project ID、user ID 批量克隆仓库。
 
