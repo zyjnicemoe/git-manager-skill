@@ -1,270 +1,206 @@
-# Git Manager - 使用示例
+# git-manager Skill - 完整示例
 
-## 场景一：批量克隆 GitHub Organization 下所有仓库
+## 场景一：克隆团队 GitHub Organization 下所有仓库
 
 ```bash
-# 克隆公开 org（无需 token）
 python scripts/batch_clone.py \
   --platform github \
   --type org \
-  --id my-organization \
-  --output ./my-org-repos
-
-# 克隆私有 org（需要 token）
-python scripts/batch_clone.py \
-  --platform github \
-  --type org \
-  --id my-organization \
-  --token ghp_xxxxxxxxxxxxxxxxxxxx \
-  --output ./my-org-repos
-
-# 使用 SSH 克隆（需配置 SSH Key）
-python scripts/batch_clone.py \
-  --platform github \
-  --type org \
-  --id my-organization \
-  --token ghp_xxxxxxxxxxxxxxxxxxxx \
-  --ssh \
-  --output ./my-org-repos
-
-# 预览将克隆哪些仓库（不实际克隆）
-python scripts/batch_clone.py \
-  --platform github \
-  --type org \
-  --id my-organization \
-  --dry-run
+  --id my-team-org \
+  --output ./team-repos \
+  --token $GITHUB_TOKEN \
+  --workers 4 \
+  --lfs
 ```
 
----
-
-## 场景二：批量克隆 GitLab Group 下所有项目
+## 场景二：克隆 GitLab Group 及其子组所有项目
 
 ```bash
-# 按 group_id（数字）批量克隆
+export GITLAB_TOKEN=glpat-xxxxxxxxxxxx
 python scripts/batch_clone.py \
   --platform gitlab \
   --host https://gitlab.com \
   --type group \
-  --id 1234567 \
-  --token glpat-xxxxxxxxxxxxxxxxxxxx \
-  --output ./gitlab-group-repos
+  --id my-group \
+  --output ./gitlab-projects \
+  --recursive \
+  --workers 8
+```
 
-# 私有 GitLab 实例
-python scripts/batch_clone.py \
-  --platform gitlab \
-  --host https://gitlab.yourcompany.com \
-  --type group \
-  --id my-team \
-  --token glpat-xxxxxxxxxxxxxxxxxxxx \
-  --output ./company-repos
+## 场景三：克隆 Bitbucket Workspace 下所有仓库
 
-# 克隆单个 GitLab 项目（按 project_id）
+```bash
 python scripts/batch_clone.py \
-  --platform gitlab \
-  --host https://gitlab.com \
+  --platform bitbucket \
+  --type workspace \
+  --id my-workspace \
+  --output ./bitbucket-repos \
+  --token $BB_TOKEN \
+  --workers 4
+```
+
+## 场景四：Azure DevOps 项目批量克隆
+
+```bash
+python scripts/batch_clone.py \
+  --platform azure \
+  --org my-company \
+  --project "Dev Team" \
   --type project \
-  --id 987654 \
-  --token glpat-xxxxxxxxxxxxxxxxxxxx \
-  --output ./single-project
-
-# 包含已归档项目
-python scripts/batch_clone.py \
-  --platform gitlab \
-  --host https://gitlab.com \
-  --type group \
-  --id 1234567 \
-  --token glpat-xxxxxxxxxxxxxxxxxxxx \
-  --archived \
-  --output ./all-repos
+  --id "Dev Team" \
+  --output ./azure-repos \
+  --token $AZURE_PAT \
+  --workers 4
 ```
 
----
-
-## 场景三：批量克隆 Gitea 用户 / 组织仓库
+## 场景五：从 GitHub 迁移仓库到 Gitea（启用镜像同步）
 
 ```bash
-# Gitea 组织下所有仓库
+# 迁移单个仓库，自动启用镜像
+python scripts/batch_clone.py \
+  --platform gitea \
+  --host https://gitea.com \
+  --migrate \
+  --src https://github.com/myuser/myproject \
+  --name myproject \
+  --token $GITEA_TOKEN
+
+# 迁移到指定组织
+python scripts/batch_clone.py \
+  --platform gitea \
+  --host https://gitea.com \
+  --migrate \
+  --src https://github.com/myuser/myproject \
+  --name myproject \
+  --owner myorg \
+  --private \
+  --token $GITEA_TOKEN
+```
+
+## 场景六：创建 Gitea 组织
+
+```bash
+# 需要管理员权限的 token
+python scripts/batch_clone.py \
+  --platform gitea \
+  --host https://gitea.com \
+  --create-org skills \
+  --desc "AI Skills Collection" \
+  --token $GITEA_ADMIN_TOKEN
+```
+
+## 场景七：触发 Gitea 仓库镜像同步
+
+```bash
+python scripts/batch_clone.py \
+  --platform gitea \
+  --host https://gitea.com \
+  --sync \
+  --owner myuser \
+  --repo myproject \
+  --token $GITEA_TOKEN
+```
+
+## 场景八：批量更新本地所有仓库
+
+```bash
+# 标准 pull（快进）
+python scripts/batch_pull.py ./all-repos
+
+# rebase 方式，有修改时自动 stash
+python scripts/batch_pull.py ./all-repos --rebase --stash --workers 4
+
+# 只查看要更新的仓库（不执行）
+python scripts/batch_pull.py ./all-repos --dry-run
+```
+
+## 场景九：找回误删的提交
+
+```bash
+# 查看 reflog 找到丢失的提交
+python scripts/git_ops.py reflog ./my-repo -n 30
+
+# 找到目标 commit 后，创建分支恢复
+python scripts/git_ops.py checkout ./my-repo -b recovered-branch <commit-hash>
+```
+
+## 场景十：多分支同时工作
+
+```bash
+# 查看现有工作树
+python scripts/git_ops.py worktree ./my-repo --list
+
+# 为新功能添加工作树
+python scripts/git_ops.py worktree ./my-repo ../feature-auth -b auth-feature
+
+# 开发完成后删除工作树
+python scripts/git_ops.py worktree ./my-repo --remove ../feature-auth
+```
+
+## 场景十一：二分定位 bug
+
+```bash
+# 启动 bisect，指定已知正常和异常的提交
+python scripts/git_ops.py bisect ./my-repo --start HEAD v1.0.0
+
+# 手动标记
+python scripts/git_ops.py bisect ./my-repo --good   # 当前正常
+python scripts/git_ops.py bisect ./my-repo --bad    # 当前有问题
+
+# 或自动运行测试
+python scripts/git_ops.py bisect ./my-repo --start HEAD v1.0.0 --run "make test"
+
+# 重置
+python scripts/git_ops.py bisect ./my-repo --reset
+```
+
+## 场景十二：批量管理 Git LFS
+
+```bash
+# 为目录下所有仓库初始化 LFS
+Get-ChildItem -Recurse -Directory | ForEach-Object {
+    python scripts/git_lfs.py $_.FullName --install 2>$null
+}
+
+# 迁移历史大文件到 LFS
+python scripts/git_lfs.py ./my-repo migrate --pattern "*.zip" --to lfs
+python scripts/git_lfs.py ./my-repo migrate --pattern "*.psd" --to lfs
+```
+
+## 场景十三：Gitea 私有实例完整迁移流程
+
+```bash
+# 1. 探测实例版本
+curl https://gitea.example.com/api/v1/version
+
+# 2. 获取当前用户 uid
+curl -H "Authorization: token $GITEA_TOKEN" \
+     https://gitea.example.com/api/v1/user
+
+# 3. 创建组织（需 admin token）
 python scripts/batch_clone.py \
   --platform gitea \
   --host https://gitea.example.com \
-  --type org \
-  --id my-org \
-  --token your_token \
-  --output ./gitea-repos
+  --create-org myteam \
+  --desc "My Team" \
+  --token $GITEA_ADMIN_TOKEN
 
-# Gitea 用户仓库
+# 4. 迁移仓库到组织
 python scripts/batch_clone.py \
   --platform gitea \
   --host https://gitea.example.com \
-  --type user \
-  --id johndoe \
-  --token your_token \
-  --output ./johndoe-repos
+  --migrate \
+  --src https://github.com/myuser/repo1 \
+  --name repo1 \
+  --owner myteam \
+  --token $GITEA_TOKEN
 
-# 仅克隆名称含 "backend" 的仓库
+# 5. 触发同步
 python scripts/batch_clone.py \
   --platform gitea \
   --host https://gitea.example.com \
-  --type org \
-  --id my-org \
-  --token your_token \
-  --filter backend \
-  --output ./backend-repos
-```
-
----
-
-## 场景四：批量克隆 Bitbucket Workspace 仓库
-
-```bash
-# Bitbucket workspace 下所有仓库
-python scripts/batch_clone.py \
-  --platform bitbucket \
-  --type workspace \
-  --id my-workspace \
-  --token BB_TOKEN \
-  --output ./bitbucket-repos
-
-# 仅克隆公开仓库
-python scripts/batch_clone.py \
-  --platform bitbucket \
-  --type workspace \
-  --id my-workspace \
-  --token BB_TOKEN \
-  --filter frontend \
-  --output ./frontend-repos
-```
-
----
-
-## 场景五：批量克隆 Azure DevOps 项目仓库
-
-```bash
-# Azure DevOps 项目下所有仓库（需要 PAT）
-python scripts/batch_clone.py \
-  --platform azure \
-  --org my-organization \
-  --project MyProject \
-  --token AZURE_PAT \
-  --output ./azure-repos
-
-# 使用 SSH 克隆
-python scripts/batch_clone.py \
-  --platform azure \
-  --org my-organization \
-  --project MyProject \
-  --token AZURE_PAT \
-  --ssh \
-  --output ./azure-repos
-
-# 限制克隆前 10 个仓库
-python scripts/batch_clone.py \
-  --platform azure \
-  --org my-organization \
-  --project MyProject \
-  --token AZURE_PAT \
-  --limit 10 \
-  --output ./azure-repos
-```
-
----
-
-## 场景六：批量拉取本地仓库更新
-
-```bash
-# 更新目录下所有仓库
-python scripts/batch_pull.py ./repos
-
-# 以 rebase 方式拉取（更干净的提交历史）
-python scripts/batch_pull.py ./repos --rebase
-
-# 有未提交修改时自动 stash
-python scripts/batch_pull.py ./repos --stash
-
-# 仅 fetch（查看有哪些更新，不合并）
-python scripts/batch_pull.py ./repos --fetch
-
-# 并发执行（适合仓库数量多时加速）
-python scripts/batch_pull.py ./repos --workers 4
-
-# 只更新名称含 "api" 的仓库
-python scripts/batch_pull.py ./repos --filter api
-
-# 先预览再执行
-python scripts/batch_pull.py ./repos --dry-run
-```
-
----
-
-## 场景七：单仓库基础操作
-
-```bash
-# 克隆单个仓库
-python scripts/git_ops.py clone https://github.com/org/repo.git
-python scripts/git_ops.py clone https://github.com/org/repo.git ./my-repo -b develop
-
-# 拉取更新
-python scripts/git_ops.py pull ./my-repo
-python scripts/git_ops.py pull ./my-repo --rebase
-
-# 合并分支
-python scripts/git_ops.py merge ./my-repo feature/login
-python scripts/git_ops.py merge ./my-repo feature/login --no-ff -m "合并登录功能"
-python scripts/git_ops.py merge ./my-repo feature/login --squash
-
-# 衍合
-python scripts/git_ops.py rebase ./my-repo --branch main
-python scripts/git_ops.py rebase ./my-repo --onto main old-feature
-
-# Fetch
-python scripts/git_ops.py fetch ./my-repo
-python scripts/git_ops.py fetch ./my-repo --all
-
-# 查看状态
-python scripts/git_ops.py status ./my-repo
-```
-
----
-
-## 场景八：已有仓库目录批量更新（克隆时使用 --update）
-
-```bash
-# 第一次克隆
-python scripts/batch_clone.py --platform github --type org --id my-org --output ./repos
-
-# 之后定期更新（--update 表示仓库已存在时执行 pull）
-python scripts/batch_clone.py --platform github --type org --id my-org --output ./repos --update
-
-# 或直接使用 batch_pull.py 更新
-python scripts/batch_pull.py ./repos --stash --rebase
-```
-
----
-
-## 常用 Token 配置方式
-
-### 方式一：命令行参数
-```bash
-python scripts/batch_clone.py --token YOUR_TOKEN ...
-```
-
-### 方式二：环境变量（推荐，避免泄露）
-```bash
-# 设置环境变量
-export GITHUB_TOKEN=ghp_xxx
-export GITLAB_TOKEN=glpat_xxx
-export GITEA_TOKEN=your_token
-export BITBUCKET_TOKEN=BB_TOKEN
-export AZURE_TOKEN=AZURE_PAT
-
-# 在脚本中读取（需修改脚本或由 WorkBuddy 传递）
-```
-
-### 方式三：Git credential helper
-```bash
-# 配置 credential store
-git config --global credential.helper store
-
-# 或使用 keychain（macOS）
-git config --global credential.helper osxkeychain
+  --sync \
+  --owner myteam \
+  --repo repo1 \
+  --token $GITEA_TOKEN
 ```

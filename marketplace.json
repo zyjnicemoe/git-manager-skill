@@ -1,6 +1,6 @@
 {
   "name": "git-manager",
-  "description": "Git repository management skill - batch clone, pull, merge, rebase, LFS for GitHub, GitLab, Gitea",
+  "description": "Git repository management skill - batch clone/pull, Gitea migration with mirror sync, full-featured Git workflow (merge, rebase, reflog, bisect, worktree, LFS) for GitHub, GitLab, Gitea, Bitbucket, and Azure DevOps.",
   "author": "zhuyijun",
   "homepage": "https://zyjblogs.cn",
   "tags": [
@@ -8,9 +8,12 @@
     "github",
     "gitlab",
     "gitea",
-    "clone",
+    "bitbucket",
+    "azure-devops",
     "batch-clone",
+    "batch-pull",
     "git-lfs",
+    "mirror-sync",
     "repository-management",
     "vercel-skills",
     "agent-skill"
