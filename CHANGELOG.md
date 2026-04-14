@@ -2,6 +2,26 @@
 
 All notable changes to `git-manager` skill are documented here.
 
+## [2.1.0] - 2026-04-14
+
+### Added
+- **`git_ops.py`** - 🆕 新增 `reflog` 命令：查看引用日志，用于找回丢失的提交（救命刚需）
+- **`git_ops.py`** - 🆕 新增 `describe` 命令：显示语义化版本，基于最近标签（如 v1.2.0-5-gabc1234）
+- **`git_ops.py`** - 🆕 新增 `worktree` 命令：管理工作树，支持 list/add/remove/prune/lock/unlock
+- **`git_ops.py`** - 🆕 新增 `grep` 命令：在仓库中搜索文本，支持正则、大小写、上下文等丰富选项
+- **`git_ops.py`** - 🆕 新增 `cherry-pick` 命令：选取性应用提交，支持 --continue/--abort/--skip
+- **`git_ops.py`** - 🆕 新增 `revert` 命令：生成反向提交（安全撤销），支持合并冲突解决流程
+- **`git_ops.py`** - 🆕 新增 `bisect` 命令：二分查找定位 bug，支持自动化 bisect run
+- **`git_ops.py`** - log 子命令新增 `--reverse`（逆序显示）和 `--follow`（追踪文件重命名历史）
+- **`git_ops.py`** - diff 子命令新增 `--color-words`（词级别差异高亮）和 `--ws-error-highlight`
+- **`git_ops.py`** - branch 子命令新增 `-u/--set-upstream-to`（设置上游分支）
+- **`git_ops.py`** - stash 子命令新增 `-u/--include-untracked`（同时暂存未跟踪文件）
+
+### Fixed
+- **`git_ops.py`** - 修复 `stash pop` 不支持指定 stash ID 的 bug（`--pop stash@{2}` 现在可用）
+- **`git_ops.py`** - 修复 `log --oneline` 与 `--format` 参数冲突（重命名 dest 为 `format_`）
+- **`git_ops.py`** - 补全 log 子命令 argparse 中缺失的 `--format` 参数定义
+
 ## [2.0.0] - 2026-04-14
 
 ### Added

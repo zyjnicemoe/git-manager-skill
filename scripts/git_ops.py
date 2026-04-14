@@ -177,6 +177,10 @@ def cmd_branch(args):
         cmd = ["branch", "-m", args.branch_name, args.new_name]
     elif args.copy and args.branch_name:
         cmd = ["branch", "-c", args.branch_name, args.new_name]
+    elif args.set_upstream:
+        cmd = ["branch", "-u", args.set_upstream]
+        if args.branch_name:
+            cmd.insert(2, args.branch_name)
 
     result = run_git(cmd, cwd=args.repo_path, check=False)
     if result.returncode == 0:
@@ -351,8 +355,12 @@ def cmd_stash(args):
     cmd = ["stash"]
     if args.save:
         cmd += ["save", args.save]
+        if args.include_untracked:
+            cmd.append("--include-untracked")
     elif args.pop:
         cmd = ["stash", "pop"]
+        if args.stash_id:
+            cmd.append(args.stash_id)
     elif args.apply:
         cmd = ["stash", "apply"]
         if args.stash_id:
@@ -407,6 +415,10 @@ def cmd_diff(args):
         cmd.append(args.branch)
     if args.compare:
         cmd.append(args.compare)
+    if args.color_words:
+        cmd.append("--color-words")
+    if args.ws_error_highlight:
+        cmd.append("--ws-error-highlight=all")
     if args.files:
         cmd += args.files
 
@@ -441,16 +453,18 @@ def cmd_log(args):
     cmd = ["log"]
     if args.oneline:
         cmd.append("--oneline")
+    if args.stat:
+        cmd.append("--stat")
+    if args.patch:
+        cmd.append("-p")
+    if args.format_:
+        cmd += ["--format", args.format_]
     if args.graph:
         cmd.append("--graph")
     if args.all:
         cmd.append("--all")
     if args.decorate:
         cmd.append("--decorate")
-    if args.stat:
-        cmd.append("--stat")
-    if args.patch:
-        cmd.append("-p")
     if args.n:
         cmd.append(f"-{args.n}")
     if args.author:
@@ -465,6 +479,10 @@ def cmd_log(args):
         cmd += ["--", args.file]
     if args.branch:
         cmd.append(args.branch)
+    if args.reverse:
+        cmd.append("--reverse")
+    if args.follow:
+        cmd.append("--follow")
 
     print(f"\n[Log] {args.repo_path}")
     run_git(cmd, cwd=args.repo_path)
@@ -599,6 +617,296 @@ def cmd_gc(args):
         sys.exit(1)
 
 
+def cmd_reflog(args):
+    """查看引用日志（找回丢失的提交）"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["reflog"]
+    if args.show:
+        cmd = ["reflog", "show"]
+    if args.expire:
+        cmd = ["reflog", "expire"]
+        if args.dry_run:
+            cmd.append("--dry-run")
+        if args.all:
+            cmd.append("--all")
+    if args.n:
+        cmd.append(f"-{args.n}")
+    if args.ref:
+        cmd.append(args.ref)
+
+    print(f"\n[Reflog] {args.repo_path}")
+    run_git(cmd, cwd=args.repo_path)
+
+
+def cmd_describe(args):
+    """显示基于最近标签的语义化版本"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["describe"]
+    if args.all:
+        cmd.append("--all")
+    if args.tags:
+        cmd.append("--tags")
+    if args.always:
+        cmd.append("--always")
+    if args.abbrev:
+        cmd += ["--abbrev", str(args.abbrev)]
+    if args.exact_match:
+        cmd.append("--exact-match")
+    if args.long:
+        cmd.append("--long")
+    if args.candidates:
+        cmd += ["--candidates", str(args.candidates)]
+    if args.match:
+        cmd += ["--match", args.match]
+    if args.exclude:
+        cmd += ["--exclude", args.exclude]
+    if args.contains:
+        cmd += ["--contains", args.contains]
+    if args.connected:
+        cmd.append("--always")
+    if args.debug:
+        cmd.append("--debug")
+    if args.object:
+        cmd.append(args.object)
+
+    print(f"\n[Describe] {args.repo_path}")
+    result = run_git(cmd, cwd=args.repo_path, check=False)
+    if result.returncode != 0:
+        print("[提示] 当前没有任何标签，请先使用 tag 命令创建标签")
+        sys.exit(1)
+
+
+def cmd_worktree(args):
+    """工作树管理"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["worktree"]
+    if args.list:
+        run_git(["worktree", "list"], cwd=args.repo_path)
+        return
+    if args.add:
+        cmd = ["worktree", "add"]
+        if args.force:
+            cmd.append("--force")
+        if args.checkout:
+            cmd += ["-b", args.checkout]
+        cmd.append(args.path)
+        if args.branch:
+            cmd.append(args.branch)
+    elif args.remove:
+        cmd = ["worktree", "remove"]
+        if args.force:
+            cmd.append("--force")
+        cmd.append(args.path)
+    elif args.prune:
+        cmd = ["worktree", "prune"]
+        if args.dry_run:
+            cmd.append("--dry-run")
+        if args.verbose:
+            cmd.append("--verbose")
+    elif args.lock:
+        cmd = ["worktree", "lock"]
+        if args.reason:
+            cmd += ["--reason", args.reason]
+        cmd.append(args.path)
+    elif args.unlock:
+        cmd = ["worktree", "unlock"]
+        cmd.append(args.path)
+
+    print(f"\n[Worktree] {args.repo_path}")
+    result = run_git(cmd, cwd=args.repo_path, check=False)
+    if result.returncode == 0:
+        print("[OK] 操作成功")
+    else:
+        sys.exit(1)
+
+
+def cmd_grep(args):
+    """在仓库中搜索文本"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["grep"]
+    if args.ignore_case:
+        cmd.append("-i")
+    if args.regexp_extended:
+        cmd.append("-E")
+    if args.regexp_basic:
+        cmd.append("-G")
+    if args.fixed_strings:
+        cmd.append("-F")
+    if args.invert:
+        cmd.append("--invert-match")
+    if args.word_regexp:
+        cmd.append("-w")
+    if args.line_no:
+        cmd.append("-n")
+    if args.count:
+        cmd.append("-c")
+    if args.files_with_matches:
+        cmd.append("-l")
+    if args.files_without_match:
+        cmd.append("-L")
+    if args.column:
+        cmd.append("--column")
+    if args.extended:
+        cmd.append("--extended-regexp")
+    if args.only_matching:
+        cmd.append("-o")
+    if args.max_count:
+        cmd += ["--max-count", str(args.max_count)]
+    if args.context:
+        cmd += ["--context", str(args.context)]
+    if args.before_context:
+        cmd += ["-B", str(args.before_context)]
+    if args.after_context:
+        cmd += ["-A", str(args.after_context)]
+    if args.branch:
+        cmd.append(args.branch)
+    if args.pattern:
+        cmd.append(args.pattern)
+    if args.files:
+        cmd += ["--"] + args.files
+
+    print(f"\n[Grep] {args.repo_path}: {args.pattern or ''}")
+    run_git(cmd, cwd=args.repo_path)
+
+
+def cmd_cherry_pick(args):
+    """选取性应用提交"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["cherry-pick"]
+    if args.continue_:
+        cmd = ["cherry-pick", "--continue"]
+    elif args.abort:
+        cmd = ["cherry-pick", "--abort"]
+    elif args.skip:
+        cmd = ["cherry-pick", "--skip"]
+    else:
+        if args.no_commit:
+            cmd.append("--no-commit")
+        if args.mainline:
+            cmd += ["--mainline", str(args.mainline)]
+        if args.edit:
+            cmd.append("--edit")
+        if args.cleanup:
+            cmd += ["--cleanup", args.cleanup]
+        if args.no_verify:
+            cmd.append("-n")
+        if args.include:
+            for c in args.include:
+                cmd += ["-x", c]
+        if args.exclude:
+            for c in args.exclude:
+                cmd += ["--no-commit"]  # 跳过
+        if args.ff:
+            cmd.append("--ff")
+        if args.force:
+            cmd.append("--force")
+        if args.quiet:
+            cmd.append("-q")
+        if args.commit:
+            cmd.append(args.commit)
+
+    print(f"\n[Cherry-Pick] {args.repo_path}")
+    result = run_git(cmd, cwd=args.repo_path, check=False)
+    if result.returncode == 0:
+        print("[OK] Cherry-pick 成功")
+    else:
+        print("[FAIL] Cherry-pick 失败（可能存在冲突，请手动解决）")
+        sys.exit(1)
+
+
+def cmd_revert(args):
+    """生成反向提交（安全撤销）"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["revert"]
+    if args.continue_:
+        cmd = ["revert", "--continue"]
+    elif args.abort:
+        cmd = ["revert", "--abort"]
+    elif args.skip:
+        cmd = ["revert", "--skip"]
+    else:
+        if args.no_commit:
+            cmd.append("--no-commit")
+        if args.edit:
+            cmd.append("--edit")
+        if args.no_verify:
+            cmd.append("-n")
+        if args.cleanup:
+            cmd += ["--cleanup", args.cleanup]
+        if args.quiet:
+            cmd.append("-q")
+        if args.include:
+            for c in args.include:
+                cmd.append(c)
+        if args.exclude:
+            for c in args.exclude:
+                cmd.append(c)
+        if args.ff:
+            cmd.append("--ff")
+        if args.commit:
+            cmd.append(args.commit)
+
+    print(f"\n[Revert] {args.repo_path}")
+    result = run_git(cmd, cwd=args.repo_path, check=False)
+    if result.returncode == 0:
+        print("[OK] Revert 成功")
+    else:
+        print("[FAIL] Revert 失败（可能存在冲突，请手动解决）")
+        sys.exit(1)
+
+
+def cmd_bisect(args):
+    """二分查找定位 bug"""
+    if not _check_repo(args.repo_path):
+        sys.exit(1)
+    cmd = ["bisect"]
+    if args.start:
+        cmd = ["bisect", "start"]
+        if args.bad:
+            cmd.append(args.bad)
+        if args.good:
+            cmd.append(args.good)
+    elif args.good:
+        cmd = ["bisect", "good", args.good]
+    elif args.bad:
+        cmd = ["bisect", "bad", args.bad]
+    elif args.skip:
+        cmd = ["bisect", "skip"]
+        if args.revision:
+            cmd.append(args.revision)
+    elif args.reset:
+        cmd = ["bisect", "reset"]
+        if args.revision:
+            cmd.append(args.revision)
+    elif args.terms:
+        cmd = ["bisect", "terms", args.terms]
+    elif args.visual:
+        cmd = ["bisect", "visualize"]
+    elif args.log:
+        cmd = ["bisect", "log"]
+    elif args.run:
+        cmd = ["bisect", "run"]
+        if args.command:
+            cmd.append(args.command)
+    else:
+        # 默认：启动 bisect
+        cmd = ["bisect", "start"]
+
+    print(f"\n[Bisect] {args.repo_path}")
+    result = run_git(cmd, cwd=args.repo_path, check=False)
+    if result.returncode != 0:
+        print("[提示] bisect 需要提供已知 good/bad 提交，如: git_ops.py bisect ./repo --start HEAD v1.0.0")
+        sys.exit(1)
+    else:
+        print("[OK] Bisect 操作成功")
+
+
 def cmd_lfs(args):
     """Git LFS 操作"""
     if not _check_repo(args.repo_path):
@@ -714,6 +1022,7 @@ def main():
     p.add_argument("--rename", action="store_true", help="重命名分支")
     p.add_argument("--copy", action="store_true", help="复制分支")
     p.add_argument("--force", action="store_true", help="强制操作")
+    p.add_argument("-u", "--set-upstream-to", dest="set_upstream", help="设置上游分支（如 -u origin/main）")
     p.add_argument("branch_name", nargs="?", help="分支名")
     p.add_argument("new_name", nargs="?", help="新分支名")
 
@@ -776,6 +1085,7 @@ def main():
     p = subparsers.add_parser("stash", help="暂存工作区修改")
     p.add_argument("repo_path", help="本地仓库路径")
     p.add_argument("--save", metavar="MSG", help="保存并附加信息")
+    p.add_argument("-u", "--include-untracked", action="store_true", help="同时暂存未跟踪文件")
     p.add_argument("--pop", action="store_true", help="弹出最近 stash")
     p.add_argument("--apply", action="store_true", help="应用最近 stash（不删除）")
     p.add_argument("--list", action="store_true", help="列出所有 stash")
@@ -795,6 +1105,8 @@ def main():
     p.add_argument("--branch", help="比较分支")
     p.add_argument("--compare", help="比较两个提交（如 abc..def）")
     p.add_argument("--color", choices=["auto", "always", "never"], default="auto")
+    p.add_argument("--color-words", action="store_true", help="词级别高亮差异")
+    p.add_argument("--ws-error-highlight", action="store_true", help="高亮空白符错误")
 
     # ── status ──────────────────────────────────
     p = subparsers.add_parser("status", help="查看状态")
@@ -821,6 +1133,9 @@ def main():
     p.add_argument("--until", help="截止日期")
     p.add_argument("--grep", help="按提交信息过滤")
     p.add_argument("--file", help="只看某文件的提交")
+    p.add_argument("--format", dest="format_", help="输出格式（如 oneline, short）")
+    p.add_argument("--reverse", action="store_true", help="逆序显示")
+    p.add_argument("--follow", action="store_true", help="追踪文件重命名历史")
 
     # ── show ─────────────────────────────────────
     p = subparsers.add_parser("show", help="查看提交详情")
@@ -878,6 +1193,125 @@ def main():
     p.add_argument("--prune", action="store_true", help="清理悬空对象")
     p.add_argument("--auto", action="store_true", help="自动模式")
 
+    # ── reflog ───────────────────────────────────
+    p = subparsers.add_parser("reflog", help="查看引用日志（找回丢失的提交）")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("ref", nargs="?", help="指定引用（如 HEAD、origin/main）")
+    p.add_argument("-n", "--max-count", type=int, dest="n", help="显示条数")
+    p.add_argument("--show", action="store_true", help="相当于 git show")
+    p.add_argument("--expire", action="store_true", help="清理过期条目")
+    p.add_argument("--dry-run", action="store_true", help="预览模式")
+    p.add_argument("--all", action="store_true", help="处理所有引用")
+
+    # ── describe ─────────────────────────────────
+    p = subparsers.add_parser("describe", help="显示语义化版本（基于最近标签）")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("object", nargs="?", help="描述对象（默认 HEAD）")
+    p.add_argument("--all", action="store_true", help="考虑所有分支的标签")
+    p.add_argument("--tags", action="store_true", help="只考虑标签")
+    p.add_argument("--always", action="store_true", help="当无标签时使用 commit hash")
+    p.add_argument("--abbrev", type=int, default=7, help="commit hash 缩写长度（默认 7）")
+    p.add_argument("--exact-match", action="store_true", help="只匹配精确的标签")
+    p.add_argument("--long", action="store_true", help="始终输出长格式")
+    p.add_argument("--candidates", type=int, default=10, help="最多候选标签数（默认 10）")
+    p.add_argument("--match", help="只匹配符合条件的标签（glob 模式）")
+    p.add_argument("--exclude", help="排除符合条件的标签（glob 模式）")
+    p.add_argument("--contains", help="在包含指定提交的标签上停止")
+    p.add_argument("--connected", action="store_true", help="验证描述对象连通性")
+    p.add_argument("--debug", action="store_true", help="调试信息")
+
+    # ── worktree ─────────────────────────────────
+    p = subparsers.add_parser("worktree", help="管理工作树（多分支同时工作）")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("path", nargs="?", help="工作树路径")
+    p.add_argument("branch", nargs="?", help="分支名")
+    p.add_argument("--list", action="store_true", help="列出所有工作树")
+    p.add_argument("--add", action="store_true", help="添加工作树")
+    p.add_argument("--remove", action="store_true", help="删除工作树")
+    p.add_argument("--prune", action="store_true", help="清理失效工作树")
+    p.add_argument("--lock", action="store_true", help="锁定工作树")
+    p.add_argument("--unlock", action="store_true", help="解锁工作树")
+    p.add_argument("--force", action="store_true", help="强制操作")
+    p.add_argument("-b", "--checkout", help="创建并切换到新分支")
+    p.add_argument("--reason", help="锁定原因")
+    p.add_argument("--dry-run", dest="dry_run", action="store_true", help="预览模式")
+    p.add_argument("--verbose", action="store_true", help="详细输出")
+
+    # ── grep ─────────────────────────────────────
+    p = subparsers.add_parser("grep", help="在仓库中搜索文本")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("pattern", nargs="?", help="搜索模式（字符串或正则）")
+    p.add_argument("files", nargs="*", help="搜索的文件")
+    p.add_argument("-i", "--ignore-case", action="store_true", help="忽略大小写")
+    p.add_argument("-E", "--regexp-extended", action="store_true", help="扩展正则")
+    p.add_argument("-G", "--regexp-basic", action="store_true", help="基本正则（默认）")
+    p.add_argument("-F", "--fixed-strings", action="store_true", help="固定字符串")
+    p.add_argument("--invert-match", action="store_true", help="反向匹配")
+    p.add_argument("-w", "--word-regexp", action="store_true", help="整词匹配")
+    p.add_argument("-n", "--line-no", action="store_true", help="显示行号")
+    p.add_argument("-c", "--count", action="store_true", help="显示匹配行数")
+    p.add_argument("-l", "--files-with-matches", action="store_true", help="只显示文件名")
+    p.add_argument("-L", "--files-without-match", action="store_true", help="只显示不匹配的文件")
+    p.add_argument("--column", action="store_true", help="显示列号")
+    p.add_argument("--extended-regexp", action="store_true", help="扩展正则")
+    p.add_argument("-o", "--only-matching", action="store_true", help="只显示匹配部分")
+    p.add_argument("--max-count", type=int, help="最多匹配次数")
+    p.add_argument("--context", type=int, help="显示前后上下文行数")
+    p.add_argument("-B", "--before-context", type=int, help="显示前导上下文")
+    p.add_argument("-A", "--after-context", type=int, help="显示后续上下文")
+    p.add_argument("branch", nargs="?", help="在指定分支搜索")
+
+    # ── cherry-pick ──────────────────────────────
+    p = subparsers.add_parser("cherry-pick", help="选取性应用提交")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("commit", nargs="?", help="要 cherry-pick 的提交")
+    p.add_argument("--no-commit", "-n", action="store_true", help="执行但不自动提交")
+    p.add_argument("--mainline", type=int, help="主提交号（用于合并提交）")
+    p.add_argument("--edit", "-e", action="store_true", help="编辑提交信息")
+    p.add_argument("--cleanup", choices=["default", "scissors", "whitespace", "verbatim", "none"],
+                   default="default", help="清理模式")
+    p.add_argument("--no-verify", action="store_true", help="跳过 pre-commit hook")
+    p.add_argument("--include", nargs="+", help="包含指定提交")
+    p.add_argument("--exclude", nargs="+", help="排除指定提交")
+    p.add_argument("--ff", action="store_true", help="允许快进")
+    p.add_argument("--force", "-f", action="store_true", help="强制继续")
+    p.add_argument("-q", "--quiet", action="store_true", help="静默模式")
+    p.add_argument("--continue", dest="continue_", action="store_true", help="继续 cherry-pick")
+    p.add_argument("--abort", action="store_true", help="放弃并恢复")
+    p.add_argument("--skip", action="store_true", help="跳过当前提交")
+
+    # ── revert ───────────────────────────────────
+    p = subparsers.add_parser("revert", help="生成反向提交（安全撤销）")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("commit", nargs="?", help="要 revert 的提交")
+    p.add_argument("--no-commit", "-n", action="store_true", help="执行但不自动提交")
+    p.add_argument("--edit", "-e", action="store_true", help="编辑提交信息")
+    p.add_argument("--no-verify", action="store_true", help="跳过 pre-commit hook")
+    p.add_argument("--cleanup", choices=["default", "scissors", "whitespace", "verbatim", "none"],
+                   default="default", help="清理模式")
+    p.add_argument("-q", "--quiet", action="store_true", help="静默模式")
+    p.add_argument("--ff", action="store_true", help="允许快进")
+    p.add_argument("--include", nargs="+", help="包含指定提交")
+    p.add_argument("--exclude", nargs="+", help="排除指定提交")
+    p.add_argument("--continue", dest="continue_", action="store_true", help="继续 revert")
+    p.add_argument("--abort", action="store_true", help="放弃并恢复")
+    p.add_argument("--skip", action="store_true", help="跳过当前提交")
+
+    # ── bisect ───────────────────────────────────
+    p = subparsers.add_parser("bisect", help="二分查找定位 bug")
+    p.add_argument("repo_path", help="本地仓库路径")
+    p.add_argument("bad", nargs="?", help="已知有问题的提交（默认 HEAD）")
+    p.add_argument("good", nargs="?", help="已知正常的提交")
+    p.add_argument("--start", action="store_true", help="启动二分查找")
+    p.add_argument("--reset", action="store_true", help="重置并退出 bisect")
+    p.add_argument("--skip", action="store_true", help="跳过当前提交")
+    p.add_argument("--visualize", action="store_true", help="可视化 bisect")
+    p.add_argument("--log", action="store_true", help="显示 bisect 日志")
+    p.add_argument("--run", action="store_true", help="自动运行 bisect")
+    p.add_argument("--command", help="自动 bisect 的测试命令")
+    p.add_argument("--terms", choices=["old", "new"], help="显示术语")
+    p.add_argument("revision", nargs="?", help="指定版本")
+
     # ── lfs ─────────────────────────────────────
     p = subparsers.add_parser("lfs", help="Git LFS 操作")
     p.add_argument("repo_path", help="本地仓库路径")
@@ -911,6 +1345,10 @@ def main():
         "tag": cmd_tag, "remote": cmd_remote,
         "clean": cmd_clean, "gc": cmd_gc,
         "lfs": cmd_lfs,
+        "reflog": cmd_reflog, "describe": cmd_describe,
+        "worktree": cmd_worktree, "grep": cmd_grep,
+        "cherry-pick": cmd_cherry_pick, "revert": cmd_revert,
+        "bisect": cmd_bisect,
     }
     dispatch[args.command](args)
 
